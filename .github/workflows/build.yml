@@ -62,10 +62,15 @@ jobs:
 
       - name: Prepare west
         run: |
+          # 激活之前创建的 venv
+          . /opt/venv/bin/activate
+      
           west init -l config
           west update
           west zephyr-export
+      
           pip install -r zephyr/scripts/requirements.txt
+      
           git config --global --add safe.directory $PWD
 
       - name: West build
