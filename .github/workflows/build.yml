@@ -29,10 +29,19 @@ jobs:
       - name: Set up build tools
         run: |
           apt-get update
-          apt-get install -y python3-pip protobuf-compiler curl
+          apt-get install -y python3-venv python3-pip protobuf-compiler curl
+      
+          # Node.js（只是警告，不影响构建）
           curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-          apt-get install -y nodejs --break-system-packages
+          apt-get install -y nodejs
+      
+          # 使用 venv，避免 PEP 668 / externally-managed-environment
+          python3 -m venv /opt/venv
+          . /opt/venv/bin/activate
+      
+          pip install --upgrade pip setuptools wheel
           pip install -U fonttools
+      
           npm install -g lv_font_conv
 
       - name: Cache west modules
