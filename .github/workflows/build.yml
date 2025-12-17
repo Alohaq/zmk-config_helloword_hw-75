@@ -26,7 +26,8 @@ jobs:
           apt-get install -y nodejs
           python3 -m venv .venv
           source .venv/bin/activate
-          pip install -U fonttools
+          # 降级 protobuf 保证 Nanopb 兼容
+          pip install "protobuf<4.0.0" fonttools
           npm install -g lv_font_conv
         shell: bash
 
@@ -52,7 +53,7 @@ jobs:
           west update
           west zephyr-export
           source .venv/bin/activate
-          pip install -r zephyr/scripts/requirements.txt
+          pip install "protobuf<4.0.0" -r zephyr/scripts/requirements.txt
           git config --global --add safe.directory $PWD
         shell: bash
 
