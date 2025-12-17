@@ -18,16 +18,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
       - name: Set up build tools
         run: |
           apt-get update
-          apt-get install -y python3-pip python3-venv protobuf-compiler curl
-          curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+          apt-get install -y python3-venv protobuf-compiler curl build-essential python3-dev libffi-dev libssl-dev
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
           apt-get install -y nodejs
           python3 -m venv .venv
           source .venv/bin/activate
-          # 降级 protobuf 兼容 Nanopb，同时固定 grpcio-tools 避免 hash 错误
-          pip install --upgrade --no-cache-dir "protobuf<4.0.0" fonttools "grpcio-tools<1.54"
+          pip install --upgrade --no-cache-dir "protobuf<4.0.0" fonttools "grpcio-tools<=1.53" wheel
           npm install -g lv_font_conv
         shell: bash
 
@@ -53,7 +57,7 @@ jobs:
           west update
           west zephyr-export
           source .venv/bin/activate
-          pip install --upgrade --no-cache-dir "protobuf<4.0.0" "grpcio-tools<1.54" -r zephyr/scripts/requirements.txt
+          pip install --upgrade --no-cache-dir "protobuf<4.0.0" "grpcio-tools<=1.53" -r zephyr/scripts/requirements.txt
           git config --global --add safe.directory $PWD
         shell: bash
 
@@ -84,3 +88,38 @@ jobs:
         with:
           name: firmware
           path: build/artifacts
+
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs: build
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: firmware
+
+      - name: Prepare release notes
+        id: release
+        run: |
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "RELEASE_BODY<<$EOF" >> $GITHUB_OUTPUT
+          sed 's/{{TAG}}/${{ github.ref_name }}/g' .github/RELEASE_TEMPLATE.md >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Publish release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: firmware/*
+          file_glob: true
+          tag: ${{ github.ref }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ${{ steps.release.outputs.RELEASE_BODY }}
+          prerelease: true
