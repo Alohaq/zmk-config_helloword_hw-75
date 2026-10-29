@@ -13,15 +13,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - { board: hw75_keyboard@1.1, keymap: hw75_keyboard.keymap  }
+          # - { board: hw75_keyboard@1.1, keymap: hw75_keyboard.keymap  }
           # - { board: hw75_keyboard@1.2, keymap: hw75_keyboard.keymap  }
-          - { board: hw75_dynamic@A,    keymap: hw75_dynamic.keymap   }
-          # - { board: hw75_dynamic@B,    keymap: hw75_dynamic.keymap   }
+          # - { board: hw75_dynamic@A,    keymap: hw75_dynamic.keymap   }
+          - { board: hw75_dynamic@B,    keymap: hw75_dynamic.keymap   }
 
     steps:
       - name: Prepare variables
         run: |
-          echo "zephyr_version=${ZEPHYR_VERSION:-stable}" >> $GITHUB_ENV
+          echo "zephyr_version=${ZEPHYR_VERSION}" >> $GITHUB_ENV
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,17 +29,12 @@ jobs:
       - name: Set up build tools
         run: |
           apt-get update
-          apt-get install -y python3-venv python3-pip protobuf-compiler curl
-          curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-          apt-get install -y nodejs
-
+          apt-get install -y nodejs python3-venv
           python3 -m venv venv
           . venv/bin/activate
-
-          # nanopb 0.4.6 的生成器依赖 pkg_resources（由 setuptools 提供）。
-          # Python 3.12 的 venv 默认不再预装 setuptools，且 81 以上的 setuptools
-          # 已移除 pkg_resources，所以必须显式安装并锁上界。
-          pip install -U pip "setuptools<81" wheel
+          apt-get install -y python3-pip protobuf-compiler curl
+          curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+          apt-get install -y nodejs
           pip install -U fonttools
           npm install -g lv_font_conv
 
@@ -65,27 +60,10 @@ jobs:
           west init -l config
           west update
           west zephyr-export
-
-          # 这里固定的 Zephyr 树里，requirements-extras.txt 第 13 行是
-          #   clang-format>=1.13x
-          # 版本号非法，pip 在解析阶段就会直接报 "Invalid requirement"。
-          # 这是树本身的问题（不是本仓库配置），而且构建完全不需要
-          # clang-format / uncrustify 这类格式化工具，剔除即可。
-          for f in zephyr/scripts/requirements.txt zephyr/scripts/requirements-extras.txt; do
-            if [ -f "$f" ]; then
-              sed -i -E '/^[[:space:]]*(clang-format|uncrustify)[[:space:]]*[<>=!]/d' "$f"
-              echo "--- sanitized: $f"
-              grep -nE 'clang-format|uncrustify' "$f" || echo "    (no clang-format/uncrustify lines left)"
-            fi
-          done
-
           pip install -r zephyr/scripts/requirements.txt
-          # 必须在 requirements.txt 之后装，否则版本会被其依赖解析覆盖
-          pip install protobuf==3.20.1  # nanopb 0.4.6 不支持 protobuf 4.x
-          pip install nanopb==0.4.6
+          pip install protobuf==3.20.1  # 指定 protobuf 版本
+          pip install nanopb==0.4.6  # 安装指定版本的 nanopb
           git config --global --add safe.directory $PWD
-        env:
-          PIP_NO_CACHE_DIR: "1"
 
       - name: West build
         run: |
@@ -98,16 +76,14 @@ jobs:
 
       - name: Rename artifacts
         run: |
-          mkdir -p build/artifacts
+          mkdir build/artifacts
           if [ -f build/zephyr/zmk.uf2 ]; then
             cp build/zephyr/zmk.uf2 "build/artifacts/${{ matrix.board }}-zmk.uf2"
           fi
           if [ -f build/zephyr/zmk.hex ]; then
             cp build/zephyr/zmk.hex "build/artifacts/${{ matrix.board }}-zmk.hex"
           fi
-          if [ -f build/zephyr/zmk.bin ]; then
-            cp build/zephyr/zmk.bin "build/artifacts/${{ matrix.board }}-zmk.bin"
-          fi
+          cp build/zephyr/zmk.bin "build/artifacts/${{ matrix.board }}-zmk.bin"
 
       - name: Archive
         uses: actions/upload-artifact@v4
@@ -125,13 +101,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # build 阶段每个 board 上传的是 firmware-<board>，
-      # 必须用 pattern 一次性匹配并合并到同一目录，否则 release 会找不到 artifact。
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: firmware-*
-          merge-multiple: true
+          name: firmware
           path: firmware
 
       - name: Prepare release notes
