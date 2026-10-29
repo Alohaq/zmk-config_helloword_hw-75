@@ -37,8 +37,8 @@ jobs:
           . venv/bin/activate
 
           # nanopb 0.4.6 的生成器依赖 pkg_resources（由 setuptools 提供）。
-          # Python 3.12 的 venv 默认不再预装 setuptools，且新版 setuptools 移除了
-          # pkg_resources，所以必须显式安装并锁在 81 以下。
+          # Python 3.12 的 venv 默认不再预装 setuptools，且 81 以上的 setuptools
+          # 已移除 pkg_resources，所以必须显式安装并锁上界。
           pip install -U pip "setuptools<81" wheel
           pip install -U fonttools
           npm install -g lv_font_conv
@@ -65,11 +65,27 @@ jobs:
           west init -l config
           west update
           west zephyr-export
+
+          # 这里固定的 Zephyr 树里，requirements-extras.txt 第 13 行是
+          #   clang-format>=1.13x
+          # 版本号非法，pip 在解析阶段就会直接报 "Invalid requirement"。
+          # 这是树本身的问题（不是本仓库配置），而且构建完全不需要
+          # clang-format / uncrustify 这类格式化工具，剔除即可。
+          for f in zephyr/scripts/requirements.txt zephyr/scripts/requirements-extras.txt; do
+            if [ -f "$f" ]; then
+              sed -i -E '/^[[:space:]]*(clang-format|uncrustify)[[:space:]]*[<>=!]/d' "$f"
+              echo "--- sanitized: $f"
+              grep -nE 'clang-format|uncrustify' "$f" || echo "    (no clang-format/uncrustify lines left)"
+            fi
+          done
+
           pip install -r zephyr/scripts/requirements.txt
-          # 必须在 requirements.txt 之后安装，否则会被其依赖解析覆盖
+          # 必须在 requirements.txt 之后装，否则版本会被其依赖解析覆盖
           pip install protobuf==3.20.1  # nanopb 0.4.6 不支持 protobuf 4.x
           pip install nanopb==0.4.6
           git config --global --add safe.directory $PWD
+        env:
+          PIP_NO_CACHE_DIR: "1"
 
       - name: West build
         run: |
