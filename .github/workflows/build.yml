@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Prepare variables
         run: |
-          echo "zephyr_version=${ZEPHYR_VERSION}" >> $GITHUB_ENV
+          echo "zephyr_version=${ZEPHYR_VERSION:-stable}" >> $GITHUB_ENV
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,12 +29,17 @@ jobs:
       - name: Set up build tools
         run: |
           apt-get update
-          apt-get install -y nodejs python3-venv
-          python3 -m venv venv
-          . venv/bin/activate
-          apt-get install -y python3-pip protobuf-compiler curl
+          apt-get install -y python3-venv python3-pip protobuf-compiler curl
           curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
           apt-get install -y nodejs
+
+          python3 -m venv venv
+          . venv/bin/activate
+
+          # nanopb 0.4.6 的生成器依赖 pkg_resources（由 setuptools 提供）。
+          # Python 3.12 的 venv 默认不再预装 setuptools，且新版 setuptools 移除了
+          # pkg_resources，所以必须显式安装并锁在 81 以下。
+          pip install -U pip "setuptools<81" wheel
           pip install -U fonttools
           npm install -g lv_font_conv
 
@@ -61,8 +66,9 @@ jobs:
           west update
           west zephyr-export
           pip install -r zephyr/scripts/requirements.txt
-          pip install protobuf==3.20.1  # 指定 protobuf 版本
-          pip install nanopb==0.4.6  # 安装指定版本的 nanopb
+          # 必须在 requirements.txt 之后安装，否则会被其依赖解析覆盖
+          pip install protobuf==3.20.1  # nanopb 0.4.6 不支持 protobuf 4.x
+          pip install nanopb==0.4.6
           git config --global --add safe.directory $PWD
 
       - name: West build
@@ -76,14 +82,16 @@ jobs:
 
       - name: Rename artifacts
         run: |
-          mkdir build/artifacts
+          mkdir -p build/artifacts
           if [ -f build/zephyr/zmk.uf2 ]; then
             cp build/zephyr/zmk.uf2 "build/artifacts/${{ matrix.board }}-zmk.uf2"
           fi
           if [ -f build/zephyr/zmk.hex ]; then
             cp build/zephyr/zmk.hex "build/artifacts/${{ matrix.board }}-zmk.hex"
           fi
-          cp build/zephyr/zmk.bin "build/artifacts/${{ matrix.board }}-zmk.bin"
+          if [ -f build/zephyr/zmk.bin ]; then
+            cp build/zephyr/zmk.bin "build/artifacts/${{ matrix.board }}-zmk.bin"
+          fi
 
       - name: Archive
         uses: actions/upload-artifact@v4
@@ -101,10 +109,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # build 阶段每个 board 上传的是 firmware-<board>，
+      # 必须用 pattern 一次性匹配并合并到同一目录，否则 release 会找不到 artifact。
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: firmware
+          pattern: firmware-*
+          merge-multiple: true
           path: firmware
 
       - name: Prepare release notes
